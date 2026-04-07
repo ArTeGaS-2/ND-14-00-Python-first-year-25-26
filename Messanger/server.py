@@ -64,3 +64,33 @@ def main() -> None:
     server_socket.listen()
 
     print(f"Server started on {HOST}:{PORT}")
+
+    try:
+        while True:
+            client_socket, client_address = server_socket.accept()
+            print(f"Client connected:  {client_address}")
+
+            # Додаємо сокет нового клієнта в список
+            with clients_lock:
+                clients.append(client_socket)
+
+            # Для кожного клієнта запускаємо окремий потік
+            client_thread = threading.Thread(
+                target=handle_client, # Яку функцію запускати в новому потоці
+                args=(client_socket,), # Які аргументи передати в handle_client
+                daemon=True # Потік не заважає завершити програму
+            )
+            client_thread.start()
+    except KeyboardInterrupt:
+        print("Server stopped")
+    finally:
+        # При завершенні закриваємо всі клієнтські сокети
+        with clients_lock:
+            for client in clients:
+                client.close()
+            clients.clear()
+        # І наприкінці закриваємо сам серверний сокет
+        server_socket.close()
+
+if __name__ == "__main__":
+    main()
