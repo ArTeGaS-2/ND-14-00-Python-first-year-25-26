@@ -38,24 +38,24 @@ class ChatPage(QWidget):
         ]
         
         title_lable = QLabel("Вікно чату")
-        self.info_label = QLabel("Перша версія: один чат без БД")
+        self.info_label = QLabel("Підключення до сервера...")
 
         self.history_box = QPlainTextEdit()
         self.history_box.setReadOnly(True)
         self.history_box.setPlainText(
-            "Бубузян: Привіт! Це перша версія чату. \n"
-            "Ти: Тут уже можна писати повідомлення.")
+            "Система: Запусти server.py, щоб чат працював")
         
         self.message_input = QLineEdit()
         self.message_input.setPlaceholderText("Напиши повідомлення...")
         self.message_input.returnPressed.connect(self.send_message)
 
-        send_button = QPushButton("Надіслати")
-        send_button.clicked.connect(self.send_message)
+        self.send_button = QPushButton("Надіслати")
+        self.send_button.clicked.connect(self.send_message)
+        self.send_button.setEnabled(False)
 
         bottom_layout = QHBoxLayout()
         bottom_layout.addWidget(self.message_input, 1)
-        bottom_layout.addWidget(send_button)
+        bottom_layout.addWidget(self.send_button)
 
         layout = QVBoxLayout()
         layout.addWidget(title_lable)
@@ -79,6 +79,7 @@ class ChatPage(QWidget):
             return
         self.info_label.setText(
             f"{self.client_name} підключено до {HOST}:{PORT}")
+        self.send_button.setEnabled(True)
 
         listen_thread = threading.Thread(
             target=self.listen_for_messages,
@@ -104,18 +105,45 @@ class ChatPage(QWidget):
         text = self.message_input.text().strip()
         if not text: 
             return
-
-        if self.client_socket is not None:
-            try:
-                self.client_socket.sendall(
-                    f"{self.client_name}: {text}".encode("utf-8"))
-            except OSError:
-                self.history_box.appendPlainText(
-                    "Система: Не вдалось надіслати повідомлення")
-                return
-
-        self.history_box.appendPlainText(f"{self.client_name}: {text}")
+        
+        self.history_box.appendPlainText(f"Ти: {text}")
         self.message_input.clear()
+
+        if self.client_socket is None:
+            self.history_box.appendPlainText("Система: Сервер недоступний")
+            return
+        try:
+            message = f"{self.client_name}: {text}"
+            self.client_socket.sendall(message.encode("utf-8"))
+        except OSError:
+            self.info_label.setText("З'єднання втрачено")
+            self.history_box.appendPlainText("Система: Повідомлення не надіслано.")
+            self.send_button.setEnabled(False)
+
+    def receive_messages(self) -> None:
+        if self.client_socket is None:
+            return
+        try:
+            while True:
+                data = self.client_socket.recv(BUFFER_SIZE)
+
+                if not data:
+                    break
+
+                message = data.decode("utf-8")
+                self.message_received.emit(message)
+        
+        except OSError:
+            pass
+        finally: 
+            self.message_received.emit("Система: З'єднання з сервером закрито")
+
+    def closeEvent(self, event: QCloseEvent) -> None:
+        if self.client_socket is not None:
+            self.client_socket.close()
+            self.client_socket = None
+
+        super().closeEvent(event)
 
 def create_chat_window() -> QMainWindow:
     window = QMainWindow()
