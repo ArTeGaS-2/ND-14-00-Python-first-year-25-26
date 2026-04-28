@@ -20,30 +20,40 @@ from PyQt6.QtWidgets import(
 
 from server import BUFFER_SIZE, HOST, PORT
 
+DEFAULT_HOST = "127.0.0.1"
+
 class ChatPage(QWidget):
     message_received =  pyqtSignal(str)
+    connection_closed = pyqtSignal(str)
 
     def __init__(self) -> None:
         super().__init__()
         self.setWindowTitle("Messanger - чат")
-        self.client_name = f"Клієнт {os.getpid()}"
-
         self.client_socket: socket.socket | None = None
-
-        self.reply_index = 0
-        self.replies = [
-            "Бубузян: Ми захопимо всесвіт!",
-            "Ізюбрь: Дєд, пий таблетки.",
-            "Кукуха: Бліцкріг!!!"
-        ]
+        self.is_closing = False
         
         title_lable = QLabel("Вікно чату")
-        self.info_label = QLabel("Підключення до сервера...")
+        self.info_label = QLabel("Спочатку введи нікней і адресу серверу.")
+
+        self.nickname_input = QLineEdit()
+        self.nickname_input.setPlaceholderText("Нікнейм")
+        self.nickname_input.setText(f"Клієнт {os.getpid()}")
+
+        self.host_input = QLineEdit()
+        self.host_input.setPlaceholderText("IP або домен сервера")
+        self.host_input.setText(DEFAULT_HOST)
+
+        self.port_input = QLineEdit()
+        self.port_input.setPlaceholderText("Порт")
+        self.port_input.setText(str(PORT))
+
+        self.connect_button = QPushButton("Підключитися")
+        self.connect_button.clicked.connect(self.connect_to_server)
 
         self.history_box = QPlainTextEdit()
         self.history_box.setReadOnly(True)
         self.history_box.setPlainText(
-            "Система: Запусти server.py, щоб чат працював")
+            "Система: Нік, адреса сервера, підключення.")
         
         self.message_input = QLineEdit()
         self.message_input.setPlaceholderText("Напиши повідомлення...")
@@ -57,29 +67,59 @@ class ChatPage(QWidget):
         bottom_layout.addWidget(self.message_input, 1)
         bottom_layout.addWidget(self.send_button)
 
+        connect_layout = QHBoxLayout()
+        connect_layout.addWidget(self.nickname_input, 1)
+        connect_layout.addWidget(self.host_input, 1)
+        connect_layout.addWidget(self.port_input)
+        connect_layout.addWidget(self.connect_button)
+
         layout = QVBoxLayout()
         layout.addWidget(title_lable)
         layout.addWidget(self.info_label)
+        layout.addLayout(connect_layout)
         layout.addWidget(self.history_box, 1)
         layout.addLayout(bottom_layout)
         self.setLayout(layout)
 
         self.message_received.connect(self.history_box.appendPlainText)
-        self.connect_to_server()
+        self.connection_closed(self.handle_disconnect)
 
     def connect_to_server(self) -> None:
+        if self.client_socket is not None:
+            self.history_box.appendPlainText("Система: Ви вже підключені")
+            return
+        
+        nickname = self.nickname_input.text().strip()
+        host = self.host_input.text().strip()
+
         try:
-            self.client_socket = socket.socket(
+            port = int(self.port_input.text().strip())
+        except ValueError:
+            self.info_label.setText("Порт має бути числом")
+            return
+        
+        if not nickname or not host:
+            self.info_label.setText("Введіть нікнейм і адресу сервера")
+            return
+        
+        try:
+            client_socket = socket.socket(
                 socket.AF_INET, socket.SOCK_STREAM)
-            self.client_socket.connect((HOST, PORT))
+            client_socket.connect((host, port))
         except OSError:
             self.info_label.setText("Сервер недоступний")
             self.history_box.appendPlainText(
                 "Система: Не вдалось підключитись до сервера")
             return
-        self.info_label.setText(
-            f"{self.client_name} підключено до {HOST}:{PORT}")
+       
+        self.client_socket = client_socket
+        self.info_label.setText(f"{nickname} підключено до {host}:{port}")
+        self.history_box.appendPlainText("Система: Підключення успішне.")
         self.send_button.setEnabled(True)
+        self.connect_button.setEnabled(False)
+        self.nickname_input.setEnabled(False)
+        self.host_input.setEnabled(False)
+        self.port_input.setEnabled(False)
 
         listen_thread = threading.Thread(
             target=self.listen_for_messages,
