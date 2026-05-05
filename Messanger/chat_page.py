@@ -82,7 +82,7 @@ class ChatPage(QWidget):
         self.setLayout(layout)
 
         self.message_received.connect(self.history_box.appendPlainText)
-        self.connection_closed(self.handle_disconnect)
+        self.connection_closed.connect(self.handle_disconnect)
 
     def connect_to_server(self) -> None:
         if self.client_socket is not None:
@@ -153,7 +153,9 @@ class ChatPage(QWidget):
             self.history_box.appendPlainText("Система: Сервер недоступний")
             return
         try:
-            message = f"{self.client_name}: {text}"
+            nickname = self.nickname_input.text().strip()
+            message = f"{nickname}: {text}"
+
             self.client_socket.sendall(message.encode("utf-8"))
         except OSError:
             self.info_label.setText("З'єднання втрачено")
@@ -176,7 +178,19 @@ class ChatPage(QWidget):
         except OSError:
             pass
         finally: 
-            self.message_received.emit("Система: З'єднання з сервером закрито")
+            self.client_socket = None
+
+            if not self.is_closing:
+                self.connection_closed.emit("Система: З'єднання з сервером закрито")
+
+    def handle_disconnect(self, message: str) -> None:
+        self.info_label.setText("З'єднання закрито")
+        self.history_box.appendPlainText(message)
+        self.send_button.setEnabled(False)
+        self.connect_button.setEnabled(True)
+        self.nickname_input.setEnabled(True)
+        self.host_input.setEnabled(True)
+        self.port_input.setEnabled(True)
 
     def closeEvent(self, event: QCloseEvent) -> None:
         if self.client_socket is not None:
